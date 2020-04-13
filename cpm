@@ -1,0 +1,207 @@
+#!/usr/bin/python3
+
+# CPP Project Manager
+
+import sys, os, subprocess
+
+def _findvar(string, index):
+    word = ""
+    a = False
+    for s in string[index:]:
+        if s == "'":
+            if not a:
+                a = True
+            else:
+                return word
+        else:
+            if a:
+                word = word + s
+            else:
+                continue
+
+def _addStrs(g):
+    s = ""
+    for i in g:
+        s += i
+    return s
+
+class CPM:
+    def __init__(self,path,name,author="me",version="0.0.1",CC="gcc",CXX="g++",LIBS="pthread",load=False):
+        self.path = path
+        self.name = name
+        self.relPath = path+name+os.sep
+        if not load:
+            self.author=author
+            self.version=version
+            self.cc=CC
+            self.cxx=CXX
+            self.libs=LIBS
+            self._create()
+        else:
+            self._load()
+
+    def _create(self):
+        os.mkdir(self.relPath)
+        os.mkdir(self.relPath+"src")
+        os.mkdir(self.relPath+"bin")
+        os.mkdir(self.relPath+"obj")
+        config = open(self.relPath+"cpm.config","w")
+        config.write(defaultConfig.format(name=self.name,author=self.author,
+                                          version=self.version,libs=self.libs,
+                                          cc=self.cc,cxx=self.cxx))
+        makefile = open(self.relPath+"Makefile","w")
+        makefile.write(defaultMakefile.format(CXX=self.cxx,CC=self.cc,
+                                              LIBS=_addStrs(("-l"+i+" " for i in self.libs.split())),
+                                              S=os.sep,EXE=self.name))
+        sourcefile = open(self.relPath+"src/main.cpp","w")
+        sourcefile.write(defaultSourcefile)
+
+    def _load(self):
+        if os.path.isdir(self.relPath):
+            if os.path.isfile(self.relPath+"Makefile"):
+                if os.path.isfile(self.relPath+"cpm.config"):
+                    configsrc = open(self.relPath+"cpm.config","r")
+                    config = configsrc.read()
+                    self.name = _findvar(config, config.find("name="))
+                    self.author = _findvar(config, config.find("author="))
+                    self.version = _findvar(config, config.find("version="))
+                    self.libs = _findvar(config, config.find("dependencies="))
+                    self.cc = _findvar(config, config.find("CC="))
+                    self.cxx = _findvar(config, config.find("CXX="))
+                else:
+                    FileNotFoundError("CPM config file not found!")
+            else:
+                FileNotFoundError("Makefile not found!")
+        else:
+            FileNotFoundError("Directory not found!")
+
+    def make(self):
+        subprocess.run(["make"],cwd=self.relPath)
+
+    def run(self):
+        subprocess.run(["./"+self.name],cwd=self.relPath+"bin/")
+
+
+def main():
+    args = sys.argv
+    path = args[0]
+    if not len(args)-1:
+        printHelp()
+    else:
+        action = args[1]
+        flags = args[2:]
+        if action in ["--help","-h"]:
+            printHelp()
+        elif action == "--version":
+            printVersion()
+        elif action == "new":
+            opNew(flags)
+        elif action == "build":
+            opBuild(flags)
+        elif action == "run":
+            opRun(flags)
+
+def printHelp():
+    print("""C/C++ Project Manager
+---------------------------------
+by Mettrich
+
+Usage: cpm action [flags]
+
+Actions:
+    new       - Starts the setup wizard for a project in the current directory
+
+    build     - Builds the current project
+
+    run       - Builds and runs the current project
+
+Flags:
+    --help/-h - Prints this help page
+    --version - Prints the current cpm version
+    -d DIR    - Specifies the target project directory
+    
+""")
+
+def printVersion():
+    print("""CPM - C/C++ Project Manager v0.0.1 by Mettrich""")
+
+def opNew(flags):
+    name = input("Name of the project: ")
+    author = input("Author's name: ")
+    version = input("Project version: ")
+    libs = input("Dependencies (seperated with whitespaces): ")
+    cc = input("C compiler (Enter for GCC): ")
+    cxx = input("C++ compiler (Enter for G++): ")
+    if "-d" in flags:
+        path = flags[flags.index("-d")+1]
+    else:
+        path = os.getcwd()
+    if cc == "": cc = "gcc"
+    if cxx == "": cxx = "g++"
+    if path[-1] != os.sep: path = path + os.sep
+    CPM(path,name,author,version,cc,cxx,libs)
+
+def opBuild(flags):
+    path = os.getcwd()
+    if path[-1] != os.sep: path = path + os.sep
+    while not os.path.isfile(path+os.sep+"cpm.config"):
+        path = os.path.dirname(path)
+    name = os.path.basename(path)
+    path = os.path.dirname(path)+os.sep
+    lol = CPM(path,name,load=True)
+    lol.make()
+
+def opRun(flags):
+    path = os.getcwd()
+    if path[-1] != os.sep: path = path + os.sep
+    while not os.path.isfile(path+os.sep+"cpm.config"):
+        path = os.path.dirname(path)
+    name = os.path.basename(path)
+    path = os.path.dirname(path)+os.sep
+    lol = CPM(path,name,load=True)
+    lol.make()
+    lol.run()
+
+
+defaultConfig = """[CPM CONFIG]
+name='{name}'
+author='{author}'
+version='{version}'
+dependencies='{libs}'
+CC='{cc}'
+CXX='{cxx}'
+"""
+
+defaultMakefile = """CXX={CXX}
+CC={CC}
+LDFLAGS={LIBS}
+
+SRCDIR=.{S}src{S}
+OBJDIR=.{S}obj{S}
+BINDIR=.{S}bin{S}
+
+EXE={EXE}
+
+.PHONY: all clean
+
+all: $(BINDIR)$(EXE)
+
+SRC=$(wildcard $(SRCDIR)*.cpp)
+HEADERS=$(wildcard $(SRCDIR)*.hpp)
+OBJ=$(subst $(SRCDIR), $(OBJDIR), $(SRC:.cpp=.o))
+
+$(OBJDIR)%.o: $(SRCDIR)%.cpp $(HEADERS)
+	$(CXX) -c -Wall -std=c++14 $< -o $@
+
+$(BINDIR)$(EXE): $(OBJ)
+	$(CXX) -Wall -std=c++14 $^ -o $@ $(LDFLAGS)"""
+
+defaultSourcefile = """#include <iostream>
+
+int main(int argc, char *argv[]){
+    std::cout << "Hello World from CPM!" << std::endl;
+    return 0;
+}
+"""
+if __name__ == '__main__':
+    main()
